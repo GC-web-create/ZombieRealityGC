@@ -1,0 +1,182 @@
+import pygame
+import random
+import time
+import json
+import datetime
+import math
+import array
+
+# ================== INIT ==================
+pygame.init()
+WIDTH, HEIGHT = 900, 500
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Zombie Reality - GC | Developed by GC")
+clock = pygame.time.Clock()
+
+# ================== COLORS ==================
+WHITE = (255,255,255)
+RED = (255,0,0)
+GREEN = (0,255,0)
+BLACK = (0,0,0)
+
+# ================== FONT ==================
+FONT = pygame.font.SysFont("arial", 28)
+BIGFONT = pygame.font.SysFont("arial", 50)
+
+# ================== GAME DATA ==================
+lives = 3
+coins = 0
+score = 0
+GAME_TIME_LIMIT = 5 * 60  # 5 minutes
+
+# ================== DAILY REWARD ==================
+reward_file = "daily_reward.json"
+def can_claim_daily_reward():
+    today = str(datetime.date.today())
+    try:
+        with open(reward_file,"r") as f:
+            data = json.load(f)
+        return data.get("last_claim") != today
+    except:
+        return True
+
+def claim_daily_reward():
+    global coins
+    today = str(datetime.date.today())
+    with open(reward_file,"w") as f:
+        json.dump({"last_claim": today}, f)
+    coins += 100
+
+# ================== SPIN WHEEL ==================
+def spin_wheel():
+    return random.choice([50, 100, 150, "Life"])
+
+# ================== BUNDLES ==================
+bundles = {
+    "Starter": {"coins":200,"lives":1},
+    "Hero": {"coins":500,"lives":2}
+}
+def claim_bundle(name):
+    global coins,lives
+    coins += bundles[name]["coins"]
+    lives += bundles[name]["lives"]
+
+# ================== PLAYER ==================
+player = pygame.Rect(50, HEIGHT//2, 40, 60)
+player_speed = 5
+
+# ================== ZOMBIES ==================
+zombies = []
+def spawn_zombie():
+    z = pygame.Rect(WIDTH, random.randint(50, HEIGHT-60), 40,60)
+    zombies.append(z)
+
+# ================== SOUND EFFECTS ==================
+pygame.mixer.init()
+
+# Simple shoot sound generator
+def generate_shoot_sound():
+    arr = array.array("h", [int(32767*math.sin(2*math.pi*440*x/44100)) for x in range(4410)])
+    snd = pygame.mixer.Sound(buffer=arr)
+    return snd
+shoot_sound = generate_shoot_sound()
+
+# Simple background music loop (low tone)
+def play_bg_music():
+    freq = 220
+    samples = 44100
+    arr = array.array("h", [int(32767*0.1*math.sin(2*math.pi*freq*x/samples)) for x in range(samples)])
+    snd = pygame.mixer.Sound(buffer=arr)
+    snd.play(-1)
+play_bg_music()
+
+# ================== SPLASH SCREEN ==================
+def splash():
+    screen.fill(BLACK)
+    pygame.draw.circle(screen,GREEN,(WIDTH//2,HEIGHT//2),60)
+    text = BIGFONT.render("GC", True, WHITE)
+    screen.blit(text,(WIDTH//2-40, HEIGHT//2-30))
+    title = FONT.render("Zombie Reality - GC", True, WHITE)
+    screen.blit(title,(WIDTH//2-180, HEIGHT//2+80))
+    pygame.display.update()
+    pygame.time.delay(3000)
+
+# ================== MENU ==================
+def menu():
+    global coins,lives
+    if can_claim_daily_reward():
+        claim_daily_reward()
+    running=True
+    while running:
+        screen.fill((30,30,30))
+        screen.blit(BIGFONT.render("Zombie Reality - GC",1,GREEN),(200,50))
+        screen.blit(FONT.render("Press ENTER to Start",1,WHITE),(300,150))
+        screen.blit(FONT.render("Press S for Spin",1,WHITE),(300,200))
+        screen.blit(FONT.render("Press B for Bundle",1,WHITE),(300,250))
+        screen.blit(FONT.render(f"Coins: {coins}",1,WHITE),(20,20))
+        screen.blit(FONT.render(f"Lives: {lives}",1,WHITE),(20,50))
+        screen.blit(FONT.render("Developer: GC",1,WHITE),(20,420))
+        pygame.display.update()
+        for e in pygame.event.get():
+            if e.type==pygame.QUIT: pygame.quit(); exit()
+            if e.type==pygame.KEYDOWN:
+                if e.key==pygame.K_RETURN: running=False
+                if e.key==pygame.K_s:
+                    reward = spin_wheel()
+                    if reward=="Life": lives+=1
+                    else: coins+=reward
+                if e.key==pygame.K_b:
+                    claim_bundle("Starter")
+
+# ================== GAME LOOP ==================
+def game():
+    global lives,score
+    running=True
+    spawn_timer=0
+    game_start = time.time()
+    while running:
+        clock.tick(60)
+        elapsed = time.time()-game_start
+        if elapsed>=GAME_TIME_LIMIT or lives<=0: running=False
+        for e in pygame.event.get():
+            if e.type==pygame.QUIT: pygame.quit(); exit()
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_UP]: player.y -= player_speed
+        if keys[pygame.K_DOWN]: player.y += player_speed
+        spawn_timer+=1
+        if spawn_timer>60:
+            spawn_zombie()
+            spawn_timer=0
+        for z in zombies[:]:
+            z.x-=3
+            if z.colliderect(player):
+                lives-=1
+                zombies.remove(z)
+                shoot_sound.play()
+            elif z.x<0:
+                zombies.remove(z)
+                score+=10
+        # DRAW
+        screen.fill((20,20,20))
+        pygame.draw.rect(screen,GREEN,player)
+        for z in zombies:
+            pygame.draw.rect(screen,RED,z)
+        screen.blit(FONT.render(f"Lives: {lives}",1,WHITE),(20,20))
+        screen.blit(FONT.render(f"Score: {score}",1,WHITE),(20,50))
+        screen.blit(FONT.render(f"Time Left: {int(GAME_TIME_LIMIT-elapsed)}",1,WHITE),(20,80))
+        pygame.display.update()
+
+# ================== GAME OVER ==================
+def game_over():
+    screen.fill(BLACK)
+    screen.blit(BIGFONT.render("GAME OVER",1,RED),(320,180))
+    screen.blit(FONT.render("Developed by GC",1,WHITE),(350,250))
+    pygame.display.update()
+    pygame.time.delay(3000)
+
+# ================== RUN GAME ==================
+splash()
+menu()
+game()
+game_over()
+pygame.quit()
